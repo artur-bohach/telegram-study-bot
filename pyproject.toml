@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "telegram-study-assistant"
+version = "0.1.0"
+description = "Production-minded Telegram bot foundation for a shared university study assistant."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.18,<4.0",
+    "SQLAlchemy[asyncio]>=2.0,<3.0",
+    "alembic>=1.14,<2.0",
+    "aiosqlite>=0.20,<1.0",
+    "pydantic-settings>=2.7,<3.0",
+    "python-dotenv>=1.0,<2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.9,<1.0",
+]
+
+[project.scripts]
+study-assistant-bot = "study_assistant_bot.main:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/study_assistant_bot"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
