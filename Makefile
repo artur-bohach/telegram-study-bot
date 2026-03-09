@@ -1,6 +1,7 @@
 PYTHON ?= python3.12
+TIMETABLE_PATH ?= data/group-time-table (1).xls
 
-.PHONY: install run db-upgrade db-revision lint
+.PHONY: install run db-upgrade db-revision lint import-schedule
 
 install:
 	$(PYTHON) -m pip install -e .[dev]
@@ -16,3 +17,6 @@ db-revision:
 
 lint:
 	$(PYTHON) -m ruff check .
+
+import-schedule:
+	$(PYTHON) -m study_assistant_bot.scripts.import_timetable "$(TIMETABLE_PATH)"

@@ -98,6 +98,29 @@ You can also start it directly with:
 python3.12 -m study_assistant_bot
 ```
 
+## Імпорт розкладу
+
+Після застосування міграцій розклад можна імпортувати з Excel-файлу вручну:
+
+```bash
+make import-schedule
+```
+
+За замовчуванням використовується файл `data/group-time-table (1).xls`.
+
+Щоб передати інший файл, вкажіть шлях окремо:
+
+```bash
+make import-schedule TIMETABLE_PATH="data/my-timetable.xls"
+```
+
+Імпорт:
+
+- створює `Subject`, якщо предмета ще немає;
+- створює `Lesson` для нових пар;
+- не дублює вже імпортовані заняття при повторному запуску;
+- оновлює назву, аудиторію та примітки, якщо вони змінилися в тому самому занятті.
+
 ## Environment Variables
 
 - `BOT_TOKEN`: Telegram bot token
