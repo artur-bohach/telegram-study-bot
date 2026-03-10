@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date
 from html import escape
+import re
 from typing import TYPE_CHECKING
 
 from study_assistant_bot.enums import MainMenuSection
@@ -27,6 +29,7 @@ UNKNOWN_MESSAGE_TEXT = (
 
 SCHEDULE_MENU_TEXT = "Оберіть, який розклад показати."
 SCHEDULE_BACK_TEXT = "Головне меню."
+LESSON_NOT_FOUND_TEXT = "Не вдалося знайти це заняття."
 
 WEEKDAY_TITLES = {
     0: "Понеділок",
@@ -37,6 +40,37 @@ WEEKDAY_TITLES = {
     5: "Субота",
     6: "Неділя",
 }
+
+WEEKDAY_SHORT_TITLES = {
+    0: "Пн",
+    1: "Вт",
+    2: "Ср",
+    3: "Чт",
+    4: "Пт",
+    5: "Сб",
+    6: "Нд",
+}
+
+LESSON_NUMBER_BY_START_TIME = {
+    "08:00": 1,
+    "09:30": 2,
+    "11:00": 3,
+    "12:30": 4,
+    "14:30": 5,
+    "16:00": 6,
+}
+
+LESSON_TYPE_LABELS = {
+    "Сем": "Семінар",
+    "Пз": "ПЗ",
+    "Лк": "Лекція",
+    "Дод": "Додатково",
+}
+
+LESSON_TITLE_PATTERN = re.compile(r"^(?P<subject>.+?)\s*\[(?P<details>[^\]]+)\]\s*$")
+LESSON_DETAILS_PATTERN = re.compile(
+    r"^(?P<kind>\S+)(?:\s+т\.(?P<topic>\d+))?(?:/з\.(?P<session>\d+))?$"
+)
 
 SECTION_PLACEHOLDER_TEXTS = {
     MainMenuSection.SUBJECTS: (
@@ -56,6 +90,12 @@ SECTION_PLACEHOLDER_TEXTS = {
         "This section is reserved for future AI-assisted study workflows."
     ),
 }
+
+
+@dataclass(slots=True)
+class LessonDisplayInfo:
+    subject_label: str
+    detail_label: str | None
 
 
 def build_today_schedule_text(
@@ -82,29 +122,29 @@ def build_tomorrow_schedule_text(
     )
 
 
-def build_week_schedule_text(
-    week_start: date,
-    week_end: date,
+def build_selected_day_schedule_text(
+    schedule_date: date,
     lessons: Sequence["Lesson"],
 ) -> str:
-    heading = f"<b>Тиждень {week_start:%d.%m}-{week_end:%d.%m}</b>"
+    return _build_day_schedule_text(
+        title=f"{WEEKDAY_TITLES[schedule_date.weekday()]}, {schedule_date:%d.%m}",
+        schedule_date=schedule_date,
+        lessons=lessons,
+        empty_text="На цей день занять немає.",
+        include_date_in_heading=False,
+    )
 
-    if not lessons:
-        return f"{heading}\n\nНа цей тиждень занять немає."
 
-    lessons_by_day: dict[date, list["Lesson"]] = {}
-    for lesson in lessons:
-        lesson_date = lesson.starts_at.date()
-        lessons_by_day.setdefault(lesson_date, []).append(lesson)
+def build_week_schedule_text(
+    week_dates: Sequence[date],
+) -> str:
+    if not week_dates:
+        return "<b>Тиждень</b>\n\nОберіть день."
 
-    parts = [heading]
-    for lesson_date in sorted(lessons_by_day):
-        day_heading = f"<b>{WEEKDAY_TITLES[lesson_date.weekday()]}, {lesson_date:%d.%m}</b>"
-        parts.append("")
-        parts.append(day_heading)
-        parts.append("\n".join(_format_lesson_block(lesson) for lesson in lessons_by_day[lesson_date]))
-
-    return "\n".join(parts)
+    return (
+        f"<b>Тиждень {week_dates[0]:%d.%m}-{week_dates[-1]:%d.%m}</b>\n\n"
+        "Оберіть день."
+    )
 
 
 def _build_day_schedule_text(
@@ -112,8 +152,12 @@ def _build_day_schedule_text(
     schedule_date: date,
     lessons: Sequence["Lesson"],
     empty_text: str,
+    include_date_in_heading: bool = True,
 ) -> str:
-    heading = f"<b>{title} • {WEEKDAY_TITLES[schedule_date.weekday()]}, {schedule_date:%d.%m}</b>"
+    if include_date_in_heading:
+        heading = f"<b>{title}</b>\n{WEEKDAY_TITLES[schedule_date.weekday()]}, {schedule_date:%d.%m}"
+    else:
+        heading = f"<b>{title}</b>"
 
     if not lessons:
         return f"{heading}\n\n{empty_text}"
@@ -123,13 +167,24 @@ def _build_day_schedule_text(
 
 
 def _format_lesson_block(lesson: "Lesson") -> str:
-    title = escape(lesson.title)
-    time_range = _format_time_range(lesson)
-    if lesson.location:
-        location = escape(lesson.location)
-        return f"{time_range} — {title}\nауд. {location}"
+    display = _build_lesson_display_info(lesson)
+    header_parts: list[str] = []
+    lesson_number = get_lesson_number(lesson)
 
-    return f"{time_range} — {title}"
+    if lesson_number is not None:
+        header_parts.append(f"{lesson_number} пара")
+
+    header_parts.append(_format_time_range(lesson))
+
+    lines = [f"<b>{' · '.join(header_parts)}</b>", escape(display.subject_label)]
+
+    if display.detail_label:
+        lines.append(escape(display.detail_label))
+
+    if lesson.location:
+        lines.append(f"ауд. {escape(lesson.location)}")
+
+    return "\n".join(lines)
 
 
 def _format_time_range(lesson: "Lesson") -> str:
@@ -139,3 +194,100 @@ def _format_time_range(lesson: "Lesson") -> str:
 
     end_time = lesson.ends_at.strftime("%H:%M")
     return f"{start_time}-{end_time}"
+
+
+def build_lesson_details_text(lesson: "Lesson") -> str:
+    display = _build_lesson_display_info(lesson)
+    details: list[str] = []
+    lesson_number = get_lesson_number(lesson)
+
+    if lesson_number is not None:
+        details.append(f"<b>{lesson_number} пара</b>")
+
+    details.append(f"{WEEKDAY_TITLES[lesson.starts_at.weekday()]}, {lesson.starts_at:%d.%m.%Y}")
+    details.append(_format_time_range(lesson))
+    details.append("")
+    details.append(f"<b>{escape(display.subject_label)}</b>")
+
+    if display.detail_label:
+        details.append(escape(display.detail_label))
+
+    if lesson.location:
+        details.append(f"Аудиторія: {escape(lesson.location)}")
+
+    return "\n".join(details)
+
+
+def build_schedule_lesson_button_text(
+    lesson: "Lesson",
+    context: str,
+) -> str:
+    lesson_number = get_lesson_number(lesson)
+
+    if lesson_number is not None:
+        return f"{lesson_number} пара"
+
+    return lesson.starts_at.strftime("%H:%M")
+
+
+def build_lesson_action_placeholder_text(action: str) -> str:
+    action_texts = {
+        "questions": "Розділ з питаннями для заняття з’явиться трохи пізніше.",
+        "file": "Робота з файлами для заняття буде додана трохи пізніше.",
+        "task": "Розділ із завданнями для заняття буде доданий трохи пізніше.",
+    }
+    return action_texts[action]
+
+
+def get_lesson_number(lesson: "Lesson") -> int | None:
+    return LESSON_NUMBER_BY_START_TIME.get(lesson.starts_at.strftime("%H:%M"))
+
+
+def get_weekday_short_title(schedule_date: date) -> str:
+    return WEEKDAY_SHORT_TITLES[schedule_date.weekday()]
+
+
+def _build_lesson_display_info(lesson: "Lesson") -> LessonDisplayInfo:
+    subject_label = _normalize_text(lesson.subject.name) if lesson.subject is not None else None
+    normalized_title = _normalize_text(lesson.title)
+    parsed_match = LESSON_TITLE_PATTERN.match(normalized_title)
+    detail_label: str | None = None
+
+    if parsed_match is not None:
+        subject_from_title = _normalize_text(parsed_match.group("subject"))
+        detail_label = _humanize_lesson_details(parsed_match.group("details"))
+        subject_label = subject_label or subject_from_title
+
+    if subject_label is None:
+        subject_label = normalized_title
+    elif detail_label is None and not _same_text(normalized_title, subject_label):
+        detail_label = normalized_title
+
+    return LessonDisplayInfo(subject_label=subject_label, detail_label=detail_label)
+
+
+def _humanize_lesson_details(details: str) -> str:
+    normalized_details = _normalize_text(details)
+    parsed_match = LESSON_DETAILS_PATTERN.match(normalized_details)
+    if parsed_match is None:
+        return normalized_details
+
+    parts = [LESSON_TYPE_LABELS.get(parsed_match.group("kind"), parsed_match.group("kind"))]
+    topic_number = parsed_match.group("topic")
+    session_number = parsed_match.group("session")
+
+    if topic_number is not None:
+        parts.append(f"Тема {topic_number}")
+
+    if session_number is not None:
+        parts.append(f"Заняття {session_number}")
+
+    return " · ".join(parts)
+
+
+def _normalize_text(value: str) -> str:
+    return " ".join(value.split())
+
+
+def _same_text(left: str, right: str) -> bool:
+    return _normalize_text(left).casefold() == _normalize_text(right).casefold()

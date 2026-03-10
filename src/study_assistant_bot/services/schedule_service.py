@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from study_assistant_bot.db.models import Lesson
 
@@ -16,6 +17,7 @@ class ScheduleService:
         day_start, next_day_start = self._build_day_bounds(schedule_date)
         result = await self._session.execute(
             select(Lesson)
+            .options(selectinload(Lesson.subject))
             .where(
                 Lesson.starts_at >= day_start,
                 Lesson.starts_at < next_day_start,
@@ -31,6 +33,7 @@ class ScheduleService:
 
         result = await self._session.execute(
             select(Lesson)
+            .options(selectinload(Lesson.subject))
             .where(
                 Lesson.starts_at >= week_start_at,
                 Lesson.starts_at < week_end_at,
@@ -39,11 +42,24 @@ class ScheduleService:
         )
         return list(result.scalars())
 
+    async def get_lesson_by_id(self, lesson_id: int) -> Lesson | None:
+        result = await self._session.execute(
+            select(Lesson)
+            .options(selectinload(Lesson.subject))
+            .where(Lesson.id == lesson_id)
+        )
+        return result.scalar_one_or_none()
+
     @staticmethod
     def get_week_bounds(reference_date: date) -> tuple[date, date]:
         week_start = reference_date - timedelta(days=reference_date.weekday())
         week_end = week_start + timedelta(days=6)
         return week_start, week_end
+
+    @classmethod
+    def get_work_week_dates(cls, reference_date: date) -> list[date]:
+        week_start, _ = cls.get_week_bounds(reference_date)
+        return [week_start + timedelta(days=offset) for offset in range(5)]
 
     @staticmethod
     def _build_day_bounds(schedule_date: date) -> tuple[datetime, datetime]:
