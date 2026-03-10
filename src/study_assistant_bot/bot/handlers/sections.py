@@ -9,7 +9,7 @@ from study_assistant_bot.texts import SECTION_PLACEHOLDER_TEXTS, UNKNOWN_MESSAGE
 
 router = Router(name="sections")
 
-SECTION_TITLES = {section.value for section in MainMenuSection}
+SECTION_TITLES = {section.value for section in SECTION_PLACEHOLDER_TEXTS}
 
 
 @router.message(F.text.in_(SECTION_TITLES))

@@ -12,3 +12,10 @@ class MainMenuSection(StrEnum):
     TASKS = "Tasks"
     FILES = "Files"
     AI = "AI"
+
+
+class ScheduleMenuAction(StrEnum):
+    TODAY = "Сьогодні"
+    TOMORROW = "Завтра"
+    WEEK = "Тиждень"
+    BACK = "Назад"
