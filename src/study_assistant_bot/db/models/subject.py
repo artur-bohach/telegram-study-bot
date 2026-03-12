@@ -10,6 +10,7 @@ from study_assistant_bot.db.base import Base
 
 if TYPE_CHECKING:
     from study_assistant_bot.db.models.lesson import Lesson
+    from study_assistant_bot.db.models.subject_plan import SubjectPlanItem
 
 
 class Subject(Base):
@@ -38,6 +39,10 @@ class Subject(Base):
     )
 
     lessons: Mapped[list["Lesson"]] = relationship(
+        back_populates="subject",
+        cascade="all, delete-orphan",
+    )
+    plan_items: Mapped[list["SubjectPlanItem"]] = relationship(
         back_populates="subject",
         cascade="all, delete-orphan",
     )

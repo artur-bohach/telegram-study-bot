@@ -15,7 +15,14 @@ if str(SRC_PATH) not in sys.path:
 
 from study_assistant_bot.config import get_settings
 from study_assistant_bot.db.base import Base
-from study_assistant_bot.db.models import Lesson, Subject, User
+from study_assistant_bot.db.models import (
+    Lesson,
+    PlanItemAssignment,
+    PlanItemQuestion,
+    Subject,
+    SubjectPlanItem,
+    User,
+)
 from study_assistant_bot.db.session import ensure_sqlite_directory, to_sync_database_url
 
 config = context.config

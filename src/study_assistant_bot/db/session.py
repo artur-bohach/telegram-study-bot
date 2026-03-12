@@ -40,7 +40,15 @@ def build_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessio
 
 
 async def verify_database_ready(engine: AsyncEngine) -> None:
-    required_tables = {"alembic_version", "users", "subjects", "lessons"}
+    required_tables = {
+        "alembic_version",
+        "lessons",
+        "plan_item_assignments",
+        "plan_item_questions",
+        "subject_plan_items",
+        "subjects",
+        "users",
+    }
 
     async with engine.connect() as connection:
         def check_tables(sync_connection: object) -> None:

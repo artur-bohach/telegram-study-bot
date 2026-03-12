@@ -55,6 +55,7 @@ The current scope is intentionally small: configuration, logging, database setup
 - Basic structured logging
 - Async SQLAlchemy engine and session factory
 - Initial models: `User`, `Subject`, `Lesson`
+- Subject plan storage: `SubjectPlanItem`, `PlanItemQuestion`, `PlanItemAssignment`
 - Role model for `student` and `admin`
 - Whitelist-based Telegram access control
 - Reply-keyboard main menu with placeholder handlers:
@@ -120,6 +121,32 @@ make import-schedule TIMETABLE_PATH="data/my-timetable.xls"
 - створює `Lesson` для нових пар;
 - не дублює вже імпортовані заняття при повторному запуску;
 - оновлює назву, аудиторію та примітки, якщо вони змінилися в тому самому занятті.
+
+## Імпорт навчальних планів
+
+Після імпорту розкладу та застосування актуальних міграцій можна імпортувати JSON-плани
+предметів:
+
+```bash
+make import-subject-plans
+```
+
+За замовчуванням використовується каталог `data/subject_plans`.
+
+Щоб передати інший каталог, вкажіть його окремо:
+
+```bash
+make import-subject-plans SUBJECT_PLAN_DIR="data/my-subject-plans"
+```
+
+Особливості імпорту:
+
+- обробляються лише `*.json` у корені каталогу без вкладених папок;
+- кожен файл імпортується у власній транзакції;
+- `Subject` має вже існувати в базі після попереднього кроку імпорту розкладу;
+- повторний запуск не створює дублікати;
+- JSON вважається джерелом істини для планових занять, питань і практичних завдань;
+- за успішного імпорту для відповідного предмета видаляються застарілі записи, яких уже немає у файлі.
 
 ## Environment Variables
 

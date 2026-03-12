@@ -6,6 +6,12 @@ class UserRole(StrEnum):
     ADMIN = "admin"
 
 
+class PlanLessonKind(StrEnum):
+    LECTURE = "lecture"
+    SEMINAR = "seminar"
+    PRACTICAL = "practical"
+
+
 class MainMenuSection(StrEnum):
     SCHEDULE = "Schedule"
     SUBJECTS = "Subjects"

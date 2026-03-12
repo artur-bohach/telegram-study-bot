@@ -25,6 +25,7 @@ dev = [
 
 [project.scripts]
 study-assistant-bot = "study_assistant_bot.main:run"
+study-assistant-import-subject-plans = "study_assistant_bot.scripts.import_subject_plans:main"
 study-assistant-import-timetable = "study_assistant_bot.scripts.import_timetable:main"
 
 [tool.hatch.build.targets.wheel]

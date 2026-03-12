@@ -64,7 +64,7 @@ LESSON_TYPE_LABELS = {
     "Сем": "Семінар",
     "Пз": "ПЗ",
     "Лк": "Лекція",
-    "Дод": "Додатково",
+    "Дод": "Додаткове заняття",
 }
 
 LESSON_TITLE_PATTERN = re.compile(r"^(?P<subject>.+?)\s*\[(?P<details>[^\]]+)\]\s*$")
@@ -139,11 +139,11 @@ def build_week_schedule_text(
     week_dates: Sequence[date],
 ) -> str:
     if not week_dates:
-        return "<b>Тиждень</b>\n\nОберіть день."
+        return "<b>Тиждень</b>\n\nОберіть день тижня."
 
     return (
-        f"<b>Тиждень {week_dates[0]:%d.%m}-{week_dates[-1]:%d.%m}</b>\n\n"
-        "Оберіть день."
+        f"<b>Тиждень {week_dates[0]:%d.%m}–{week_dates[-1]:%d.%m}</b>\n\n"
+        "Оберіть день тижня."
     )
 
 
@@ -176,13 +176,12 @@ def _format_lesson_block(lesson: "Lesson") -> str:
 
     header_parts.append(_format_time_range(lesson))
 
-    lines = [f"<b>{' · '.join(header_parts)}</b>", escape(display.subject_label)]
+    lines = [f"<b>{' · '.join(header_parts)}</b>", f"<b>{escape(display.subject_label)}</b>"]
 
     if display.detail_label:
-        lines.append(escape(display.detail_label))
+        lines.append(f"<i>{escape(display.detail_label)}</i>")
 
-    if lesson.location:
-        lines.append(f"ауд. {escape(lesson.location)}")
+    lines.append(_format_location_line(lesson.location))
 
     return "\n".join(lines)
 
@@ -193,7 +192,7 @@ def _format_time_range(lesson: "Lesson") -> str:
         return start_time
 
     end_time = lesson.ends_at.strftime("%H:%M")
-    return f"{start_time}-{end_time}"
+    return f"{start_time}–{end_time}"
 
 
 def build_lesson_details_text(lesson: "Lesson") -> str:
@@ -201,19 +200,21 @@ def build_lesson_details_text(lesson: "Lesson") -> str:
     details: list[str] = []
     lesson_number = get_lesson_number(lesson)
 
+    header_parts: list[str] = []
     if lesson_number is not None:
-        details.append(f"<b>{lesson_number} пара</b>")
+        header_parts.append(f"{lesson_number} пара")
 
+    header_parts.append(_format_time_range(lesson))
+
+    details.append(f"<b>{' · '.join(header_parts)}</b>")
     details.append(f"{WEEKDAY_TITLES[lesson.starts_at.weekday()]}, {lesson.starts_at:%d.%m.%Y}")
-    details.append(_format_time_range(lesson))
     details.append("")
     details.append(f"<b>{escape(display.subject_label)}</b>")
 
     if display.detail_label:
-        details.append(escape(display.detail_label))
+        details.append(f"<i>{escape(display.detail_label)}</i>")
 
-    if lesson.location:
-        details.append(f"Аудиторія: {escape(lesson.location)}")
+    details.append(_format_location_line(lesson.location))
 
     return "\n".join(details)
 
@@ -291,3 +292,12 @@ def _normalize_text(value: str) -> str:
 
 def _same_text(left: str, right: str) -> bool:
     return _normalize_text(left).casefold() == _normalize_text(right).casefold()
+
+
+def _format_location_line(location: str | None) -> str:
+    if location:
+        normalized_location = _normalize_text(location)
+        if normalized_location not in {"?", "-", "—"} and normalized_location.casefold() != "не вказано":
+            return f"Аудиторія: {escape(normalized_location)}"
+
+    return "Аудиторія: не вказана"
