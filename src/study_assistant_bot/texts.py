@@ -6,7 +6,7 @@ from datetime import date
 from html import escape
 from typing import TYPE_CHECKING
 
-from study_assistant_bot.enums import MainMenuSection
+from study_assistant_bot.enums import MainMenuSection, PlanLessonKind
 from study_assistant_bot.lesson_title_parser import (
     humanize_lesson_details,
     normalize_lesson_text,
@@ -64,6 +64,12 @@ LESSON_NUMBER_BY_START_TIME = {
     "16:00": 6,
 }
 
+PLAN_LESSON_KIND_LABELS = {
+    PlanLessonKind.LECTURE: "Лекція",
+    PlanLessonKind.SEMINAR: "Семінар",
+    PlanLessonKind.PRACTICAL: "ПЗ",
+}
+
 SECTION_PLACEHOLDER_TEXTS = {
     MainMenuSection.SUBJECTS: (
         "Subjects is not implemented yet.\n\n"
@@ -88,6 +94,14 @@ SECTION_PLACEHOLDER_TEXTS = {
 class LessonDisplayInfo:
     subject_label: str
     detail_label: str | None
+    uses_raw_title_detail: bool = False
+
+
+@dataclass(slots=True)
+class LessonDetailsInfo:
+    subject_label: str
+    detail_label: str | None
+    topic_title: str | None
 
 
 def build_today_schedule_text(
@@ -188,7 +202,7 @@ def _format_time_range(lesson: "Lesson") -> str:
 
 
 def build_lesson_details_text(lesson: "Lesson") -> str:
-    display = _build_lesson_display_info(lesson)
+    display = _build_lesson_details_info(lesson)
     details: list[str] = []
     lesson_number = get_lesson_number(lesson)
 
@@ -200,11 +214,13 @@ def build_lesson_details_text(lesson: "Lesson") -> str:
 
     details.append(f"<b>{' · '.join(header_parts)}</b>")
     details.append(f"{WEEKDAY_TITLES[lesson.starts_at.weekday()]}, {lesson.starts_at:%d.%m.%Y}")
-    details.append("")
     details.append(f"<b>{escape(display.subject_label)}</b>")
 
     if display.detail_label:
         details.append(f"<i>{escape(display.detail_label)}</i>")
+
+    if display.topic_title:
+        details.append(escape(display.topic_title))
 
     details.append(_format_location_line(lesson.location))
 
@@ -240,11 +256,39 @@ def get_weekday_short_title(schedule_date: date) -> str:
     return WEEKDAY_SHORT_TITLES[schedule_date.weekday()]
 
 
+def _build_lesson_details_info(lesson: "Lesson") -> LessonDetailsInfo:
+    display = _build_lesson_display_info(lesson)
+    detail_label = display.detail_label
+    topic_title: str | None = None
+    plan_item = getattr(lesson, "plan_item", None)
+
+    if plan_item is not None:
+        plan_detail_label = _build_plan_item_detail_label(plan_item)
+        plan_topic_title = _normalize_optional_text(getattr(plan_item, "topic_title", None))
+
+        if plan_detail_label is not None:
+            detail_label = plan_detail_label
+        elif plan_topic_title is not None and display.uses_raw_title_detail:
+            detail_label = None
+
+        if plan_topic_title is not None and not _same_text(plan_topic_title, display.subject_label):
+            if detail_label is None or not _same_text(plan_topic_title, detail_label):
+                topic_title = plan_topic_title
+
+    return LessonDetailsInfo(
+        subject_label=display.subject_label,
+        detail_label=detail_label,
+        topic_title=topic_title,
+    )
+
+
 def _build_lesson_display_info(lesson: "Lesson") -> LessonDisplayInfo:
-    subject_label = normalize_lesson_text(lesson.subject.name) if lesson.subject is not None else None
-    normalized_title = normalize_lesson_text(lesson.title)
+    subject_name = getattr(lesson.subject, "name", None) if lesson.subject is not None else None
+    subject_label = _normalize_optional_text(subject_name)
+    normalized_title = _normalize_optional_text(lesson.title) or ""
     parsed_title = parse_lesson_title(normalized_title)
     detail_label: str | None = None
+    uses_raw_title_detail = False
 
     if parsed_title is not None:
         subject_from_title = parsed_title.subject_label
@@ -255,12 +299,79 @@ def _build_lesson_display_info(lesson: "Lesson") -> LessonDisplayInfo:
         subject_label = normalized_title
     elif detail_label is None and not _same_text(normalized_title, subject_label):
         detail_label = normalized_title
+        uses_raw_title_detail = True
 
-    return LessonDisplayInfo(subject_label=subject_label, detail_label=detail_label)
+    return LessonDisplayInfo(
+        subject_label=subject_label,
+        detail_label=detail_label,
+        uses_raw_title_detail=uses_raw_title_detail,
+    )
+
+
+def _build_plan_item_detail_label(plan_item: object) -> str | None:
+    parts: list[str] = []
+    lesson_kind_label = _get_plan_lesson_kind_label(getattr(plan_item, "lesson_kind", None))
+    topic_number = _coerce_positive_int(getattr(plan_item, "topic_number", None))
+    session_number = _coerce_positive_int(getattr(plan_item, "session_number", None))
+
+    if lesson_kind_label is not None:
+        parts.append(lesson_kind_label)
+
+    if topic_number is not None:
+        parts.append(f"Тема {topic_number}")
+
+    if session_number is not None:
+        parts.append(f"Заняття {session_number}")
+
+    if not parts:
+        return None
+
+    return " · ".join(parts)
+
+
+def _get_plan_lesson_kind_label(value: object) -> str | None:
+    if isinstance(value, PlanLessonKind):
+        return PLAN_LESSON_KIND_LABELS.get(value)
+
+    if isinstance(value, str):
+        normalized_value = value.strip()
+        if not normalized_value:
+            return None
+
+        try:
+            return PLAN_LESSON_KIND_LABELS.get(PlanLessonKind(normalized_value))
+        except ValueError:
+            return None
+
+    return None
+
+
+def _coerce_positive_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+
+    if isinstance(value, int):
+        return value if value > 0 else None
+
+    if isinstance(value, str):
+        normalized_value = value.strip()
+        if normalized_value.isdigit():
+            parsed_value = int(normalized_value)
+            return parsed_value if parsed_value > 0 else None
+
+    return None
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    normalized_value = normalize_lesson_text(value)
+    return normalized_value or None
 
 
 def _normalize_text(value: str) -> str:
-    return normalize_lesson_text(value)
+    return _normalize_optional_text(value) or ""
 
 
 def _same_text(left: str, right: str) -> bool:

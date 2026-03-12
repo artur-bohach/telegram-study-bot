@@ -45,7 +45,10 @@ class ScheduleService:
     async def get_lesson_by_id(self, lesson_id: int) -> Lesson | None:
         result = await self._session.execute(
             select(Lesson)
-            .options(selectinload(Lesson.subject))
+            .options(
+                selectinload(Lesson.subject),
+                selectinload(Lesson.plan_item),
+            )
             .where(Lesson.id == lesson_id)
         )
         return result.scalar_one_or_none()
