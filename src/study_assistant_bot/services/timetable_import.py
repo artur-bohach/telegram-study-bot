@@ -6,13 +6,17 @@ from pathlib import Path
 import re
 
 from python_calamine import CalamineSheet, load_workbook
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from study_assistant_bot.db.models import Lesson, Subject
 
 WEEKDAY_LABELS = {"Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"}
 TIME_RANGE_PATTERN = re.compile(r"(?P<start>\d{2}:\d{2})-(?P<end>\d{2}:\d{2})")
+
+
+class TimetableImportError(Exception):
+    pass
 
 
 @dataclass(slots=True)
@@ -88,19 +92,44 @@ class TimetableImportService:
     ) -> tuple[dict[str, Subject], int]:
         subject_names = sorted({lesson.subject_name for lesson in parsed_lessons})
         result = await self._session.execute(
-            select(Subject).where(Subject.name.in_(subject_names))
+            select(Subject).where(
+                or_(
+                    Subject.short_name.in_(subject_names),
+                    Subject.name.in_(subject_names),
+                )
+            )
         )
-        subjects = {subject.name: subject for subject in result.scalars()}
+        matched_subjects = list(result.scalars())
+        subjects_by_short_name: dict[str, list[Subject]] = {}
+        subjects_by_name: dict[str, list[Subject]] = {}
+
+        for subject in matched_subjects:
+            if subject.short_name:
+                subjects_by_short_name.setdefault(subject.short_name, []).append(subject)
+
+            subjects_by_name.setdefault(subject.name, []).append(subject)
+
+        subjects: dict[str, Subject] = {}
         created_subjects = 0
 
         for subject_name in subject_names:
-            if subject_name in subjects:
-                continue
+            subject = self._resolve_existing_subject(
+                subject_name=subject_name,
+                short_name_matches=subjects_by_short_name.get(subject_name, []),
+                name_matches=subjects_by_name.get(subject_name, []),
+            )
 
-            subject = Subject(name=subject_name)
-            self._session.add(subject)
+            if subject is None:
+                subject = Subject(
+                    name=subject_name,
+                    short_name=subject_name,
+                )
+                self._session.add(subject)
+                created_subjects += 1
+            elif subject.short_name is None:
+                subject.short_name = subject_name
+
             subjects[subject_name] = subject
-            created_subjects += 1
 
         await self._session.flush()
         return subjects, created_subjects
@@ -255,6 +284,39 @@ class TimetableImportService:
     def _extract_subject_name(title: str) -> str:
         subject_name = title.split("[", maxsplit=1)[0]
         return TimetableImportService._normalize_text(subject_name)
+
+    @staticmethod
+    def _resolve_existing_subject(
+        subject_name: str,
+        short_name_matches: list[Subject],
+        name_matches: list[Subject],
+    ) -> Subject | None:
+        if len(short_name_matches) > 1:
+            raise TimetableImportError(
+                "Знайдено кілька предметів з однаковою короткою назвою "
+                f"`{subject_name}`. Імпорт розкладу зупинено."
+            )
+
+        if len(name_matches) > 1:
+            raise TimetableImportError(
+                "Знайдено кілька предметів з однаковою назвою "
+                f"`{subject_name}`. Імпорт розкладу зупинено."
+            )
+
+        short_name_match = short_name_matches[0] if short_name_matches else None
+        name_match = name_matches[0] if name_matches else None
+
+        if (
+            short_name_match is not None
+            and name_match is not None
+            and short_name_match.id != name_match.id
+        ):
+            raise TimetableImportError(
+                "Назва предмета з розкладу неоднозначно співпала з різними записами "
+                f"у `Subject.short_name` та `Subject.name`: `{subject_name}`."
+            )
+
+        return short_name_match or name_match
 
     @staticmethod
     def _build_lesson_key(

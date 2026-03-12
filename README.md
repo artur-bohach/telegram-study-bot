@@ -118,6 +118,8 @@ make import-schedule TIMETABLE_PATH="data/my-timetable.xls"
 Імпорт:
 
 - створює `Subject`, якщо предмета ще немає;
+- для вже відомих предметів спочатку шукає збіг за `Subject.short_name`, а потім за
+  `Subject.name`, не затираючи повну назву коротким фрагментом з Excel;
 - створює `Lesson` для нових пар;
 - не дублює вже імпортовані заняття при повторному запуску;
 - оновлює назву, аудиторію та примітки, якщо вони змінилися в тому самому занятті.
@@ -144,6 +146,8 @@ make import-subject-plans SUBJECT_PLAN_DIR="data/my-subject-plans"
 - обробляються лише `*.json` у корені каталогу без вкладених папок;
 - кожен файл імпортується у власній транзакції;
 - `Subject` має вже існувати в базі після попереднього кроку імпорту розкладу;
+- під час успішного імпорту повна назва предмета оновлюється в `Subject.name`, а коротка
+  назва з JSON зберігається в `Subject.short_name`;
 - повторний запуск не створює дублікати;
 - JSON вважається джерелом істини для планових занять, питань і практичних завдань;
 - за успішного імпорту для відповідного предмета видаляються застарілі записи, яких уже немає у файлі.
@@ -181,5 +185,7 @@ make relink-lesson-plans RELINK_SUBJECT_CODE="tax_law"
 ## Notes
 
 - The bot expects database migrations to be applied before startup.
+- `Subject.name` зберігає повну офіційну назву предмета.
+- `Subject.short_name` зберігає коротку назву для розкладу та компактного відображення.
 - `Subject` and `Lesson` are modeled as shared study data, not user-owned data.
 - Future features should be added behind the existing service and handler boundaries rather than inside the entrypoint.

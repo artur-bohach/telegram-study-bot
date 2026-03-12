@@ -18,6 +18,7 @@ class Subject(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    short_name: Mapped[str | None] = mapped_column(String(255), unique=True)
     code: Mapped[str | None] = mapped_column(String(50))
     description: Mapped[str | None] = mapped_column(Text())
     is_active: Mapped[bool] = mapped_column(

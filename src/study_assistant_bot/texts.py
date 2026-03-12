@@ -94,14 +94,13 @@ SECTION_PLACEHOLDER_TEXTS = {
 class LessonDisplayInfo:
     subject_label: str
     detail_label: str | None
-    uses_raw_title_detail: bool = False
 
 
 @dataclass(slots=True)
 class LessonDetailsInfo:
     subject_label: str
-    detail_label: str | None
-    topic_title: str | None
+    metadata_label: str | None
+    topic_label: str | None
 
 
 def build_today_schedule_text(
@@ -173,7 +172,7 @@ def _build_day_schedule_text(
 
 
 def _format_lesson_block(lesson: "Lesson") -> str:
-    display = _build_lesson_display_info(lesson)
+    display = _build_lesson_display_info(lesson, prefer_short_name=True)
     header_parts: list[str] = []
     lesson_number = get_lesson_number(lesson)
 
@@ -213,14 +212,13 @@ def build_lesson_details_text(lesson: "Lesson") -> str:
     header_parts.append(_format_time_range(lesson))
 
     details.append(f"<b>{' · '.join(header_parts)}</b>")
-    details.append(f"{WEEKDAY_TITLES[lesson.starts_at.weekday()]}, {lesson.starts_at:%d.%m.%Y}")
     details.append(f"<b>{escape(display.subject_label)}</b>")
 
-    if display.detail_label:
-        details.append(f"<i>{escape(display.detail_label)}</i>")
+    if display.metadata_label:
+        details.append(f"<i>{escape(display.metadata_label)}</i>")
 
-    if display.topic_title:
-        details.append(escape(display.topic_title))
+    if display.topic_label:
+        details.append(escape(display.topic_label))
 
     details.append(_format_location_line(lesson.location))
 
@@ -257,38 +255,33 @@ def get_weekday_short_title(schedule_date: date) -> str:
 
 
 def _build_lesson_details_info(lesson: "Lesson") -> LessonDetailsInfo:
-    display = _build_lesson_display_info(lesson)
-    detail_label = display.detail_label
-    topic_title: str | None = None
+    display = _build_lesson_display_info(lesson, prefer_short_name=False)
+    metadata_label = display.detail_label
+    topic_label: str | None = None
     plan_item = getattr(lesson, "plan_item", None)
 
     if plan_item is not None:
-        plan_detail_label = _build_plan_item_detail_label(plan_item)
-        plan_topic_title = _normalize_optional_text(getattr(plan_item, "topic_title", None))
-
-        if plan_detail_label is not None:
-            detail_label = plan_detail_label
-        elif plan_topic_title is not None and display.uses_raw_title_detail:
-            detail_label = None
-
-        if plan_topic_title is not None and not _same_text(plan_topic_title, display.subject_label):
-            if detail_label is None or not _same_text(plan_topic_title, detail_label):
-                topic_title = plan_topic_title
+        plan_metadata_label, plan_topic_label = _build_plan_item_presentation(plan_item)
+        if plan_metadata_label is not None:
+            metadata_label = plan_metadata_label
+            topic_label = plan_topic_label
 
     return LessonDetailsInfo(
         subject_label=display.subject_label,
-        detail_label=detail_label,
-        topic_title=topic_title,
+        metadata_label=metadata_label,
+        topic_label=topic_label,
     )
 
 
-def _build_lesson_display_info(lesson: "Lesson") -> LessonDisplayInfo:
-    subject_name = getattr(lesson.subject, "name", None) if lesson.subject is not None else None
-    subject_label = _normalize_optional_text(subject_name)
+def _build_lesson_display_info(
+    lesson: "Lesson",
+    *,
+    prefer_short_name: bool,
+) -> LessonDisplayInfo:
+    subject_label = _get_subject_label(lesson, prefer_short_name=prefer_short_name)
     normalized_title = _normalize_optional_text(lesson.title) or ""
     parsed_title = parse_lesson_title(normalized_title)
     detail_label: str | None = None
-    uses_raw_title_detail = False
 
     if parsed_title is not None:
         subject_from_title = parsed_title.subject_label
@@ -299,39 +292,56 @@ def _build_lesson_display_info(lesson: "Lesson") -> LessonDisplayInfo:
         subject_label = normalized_title
     elif detail_label is None and not _same_text(normalized_title, subject_label):
         detail_label = normalized_title
-        uses_raw_title_detail = True
 
     return LessonDisplayInfo(
         subject_label=subject_label,
         detail_label=detail_label,
-        uses_raw_title_detail=uses_raw_title_detail,
     )
 
 
-def _build_plan_item_detail_label(plan_item: object) -> str | None:
-    parts: list[str] = []
-    lesson_kind_label = _get_plan_lesson_kind_label(getattr(plan_item, "lesson_kind", None))
-    topic_number = _coerce_positive_int(getattr(plan_item, "topic_number", None))
-    session_number = _coerce_positive_int(getattr(plan_item, "session_number", None))
-
-    if lesson_kind_label is not None:
-        parts.append(lesson_kind_label)
-
-    if topic_number is not None:
-        parts.append(f"Тема {topic_number}")
-
-    if session_number is not None:
-        parts.append(f"Заняття {session_number}")
-
-    if not parts:
+def _get_subject_label(
+    lesson: "Lesson",
+    *,
+    prefer_short_name: bool,
+) -> str | None:
+    if lesson.subject is None:
         return None
 
-    return " · ".join(parts)
+    subject_name = _normalize_optional_text(getattr(lesson.subject, "name", None))
+    subject_short_name = _normalize_optional_text(getattr(lesson.subject, "short_name", None))
+
+    if prefer_short_name:
+        return subject_short_name or subject_name
+
+    return subject_name or subject_short_name
 
 
-def _get_plan_lesson_kind_label(value: object) -> str | None:
+def _build_plan_item_presentation(plan_item: object) -> tuple[str | None, str | None]:
+    lesson_kind = _coerce_plan_lesson_kind(getattr(plan_item, "lesson_kind", None))
+    if lesson_kind is None:
+        return None, None
+
+    lesson_kind_label = PLAN_LESSON_KIND_LABELS[lesson_kind]
+    topic_number = _coerce_positive_int(getattr(plan_item, "topic_number", None))
+    session_number = _coerce_positive_int(getattr(plan_item, "session_number", None))
+    topic_title = _normalize_optional_text(getattr(plan_item, "topic_title", None))
+
+    if lesson_kind is PlanLessonKind.LECTURE:
+        return lesson_kind_label, None
+
+    metadata_label = lesson_kind_label
+    if topic_number is not None and session_number is not None:
+        metadata_label = f"{lesson_kind_label} {topic_number}.{session_number}"
+
+    if topic_title is None:
+        return metadata_label, None
+
+    return metadata_label, f"Тема: {topic_title}"
+
+
+def _coerce_plan_lesson_kind(value: object) -> PlanLessonKind | None:
     if isinstance(value, PlanLessonKind):
-        return PLAN_LESSON_KIND_LABELS.get(value)
+        return value
 
     if isinstance(value, str):
         normalized_value = value.strip()
@@ -339,7 +349,7 @@ def _get_plan_lesson_kind_label(value: object) -> str | None:
             return None
 
         try:
-            return PLAN_LESSON_KIND_LABELS.get(PlanLessonKind(normalized_value))
+            return PlanLessonKind(normalized_value)
         except ValueError:
             return None
 

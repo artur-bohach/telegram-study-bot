@@ -61,6 +61,7 @@ async def verify_database_ready(engine: AsyncEngine) -> None:
     }
     required_columns = {
         "lessons": {"subject_plan_item_id"},
+        "subjects": {"short_name"},
     }
 
     async with engine.connect() as connection:

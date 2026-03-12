@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -369,36 +369,66 @@ class SubjectPlanImportService:
                 code_matches,
                 lookup_label=f"кодом `{subject_reference.code}`",
             )
-            return ResolvedSubject(subject=subject, matched_by="code")
+            return await self._finalize_subject_match(
+                session=session,
+                subject=subject,
+                subject_reference=subject_reference,
+                matched_by="code",
+            )
 
         name_matches = await self._find_subjects_by_field(
             session=session,
             field_name="name",
             value=subject_reference.name,
         )
+
+        short_name_matches = await self._find_subjects_by_field(
+            session=session,
+            field_name="short_name",
+            value=subject_reference.short_name,
+        )
+
+        name_subject: Subject | None = None
+        short_name_subject: Subject | None = None
+
         if name_matches:
-            subject = self._require_single_match(
+            name_subject = self._require_single_match(
                 name_matches,
                 lookup_label=f"назвою `{subject_reference.name}`",
             )
-            return self._finalize_subject_match(
-                subject=subject,
+
+        if short_name_matches:
+            short_name_subject = self._require_single_match(
+                short_name_matches,
+                lookup_label=f"короткою назвою `{subject_reference.short_name}`",
+            )
+
+        if name_subject is not None and short_name_subject is not None:
+            if name_subject.id != short_name_subject.id:
+                raise SubjectPlanResolutionError(
+                    "JSON `subject.name` і `subject.short_name` вказують на різні "
+                    "предмети в базі. Імпорт зупинено."
+                )
+
+            return await self._finalize_subject_match(
+                session=session,
+                subject=name_subject,
                 subject_reference=subject_reference,
                 matched_by="name",
             )
 
-        short_name_matches = await self._find_subjects_by_field(
-            session=session,
-            field_name="name",
-            value=subject_reference.short_name,
-        )
-        if short_name_matches:
-            subject = self._require_single_match(
-                short_name_matches,
-                lookup_label=f"короткою назвою `{subject_reference.short_name}`",
+        if name_subject is not None:
+            return await self._finalize_subject_match(
+                session=session,
+                subject=name_subject,
+                subject_reference=subject_reference,
+                matched_by="name",
             )
-            return self._finalize_subject_match(
-                subject=subject,
+
+        if short_name_subject is not None:
+            return await self._finalize_subject_match(
+                session=session,
+                subject=short_name_subject,
                 subject_reference=subject_reference,
                 matched_by="short_name",
             )
@@ -417,6 +447,8 @@ class SubjectPlanImportService:
             column = Subject.code
         elif field_name == "name":
             column = Subject.name
+        elif field_name == "short_name":
+            column = Subject.short_name
         else:
             raise ValueError(f"Unsupported subject field: {field_name}")
 
@@ -437,8 +469,9 @@ class SubjectPlanImportService:
 
         return subjects[0]
 
-    def _finalize_subject_match(
+    async def _finalize_subject_match(
         self,
+        session: AsyncSession,
         subject: Subject,
         subject_reference: ValidatedSubjectReference,
         matched_by: str,
@@ -450,14 +483,56 @@ class SubjectPlanImportService:
                     f"`{subject.code}` != `{subject_reference.code}`."
                 )
 
-            return ResolvedSubject(subject=subject, matched_by=matched_by)
+            code_backfilled = None
+        else:
+            subject.code = subject_reference.code
+            code_backfilled = subject_reference.code
 
-        subject.code = subject_reference.code
+        await self._ensure_subject_identity_available(
+            session=session,
+            subject=subject,
+            subject_reference=subject_reference,
+        )
+        subject.name = subject_reference.name
+        subject.short_name = subject_reference.short_name
+
         return ResolvedSubject(
             subject=subject,
             matched_by=matched_by,
-            code_backfilled=subject_reference.code,
+            code_backfilled=code_backfilled,
         )
+
+    async def _ensure_subject_identity_available(
+        self,
+        session: AsyncSession,
+        subject: Subject,
+        subject_reference: ValidatedSubjectReference,
+    ) -> None:
+        result = await session.execute(
+            select(Subject)
+            .where(Subject.id != subject.id)
+            .where(
+                or_(
+                    Subject.name == subject_reference.name,
+                    Subject.short_name == subject_reference.short_name,
+                )
+            )
+            .order_by(Subject.id)
+        )
+        conflicting_subjects = list(result.scalars())
+
+        for conflicting_subject in conflicting_subjects:
+            if conflicting_subject.name == subject_reference.name:
+                raise SubjectPlanResolutionError(
+                    "Неможливо нормалізувати предмет: повна назва вже зайнята іншим "
+                    f"`Subject` (`{subject_reference.name}`)."
+                )
+
+            if conflicting_subject.short_name == subject_reference.short_name:
+                raise SubjectPlanResolutionError(
+                    "Неможливо нормалізувати предмет: коротка назва вже зайнята іншим "
+                    f"`Subject` (`{subject_reference.short_name}`)."
+                )
 
     async def _sync_subject_plan(
         self,
