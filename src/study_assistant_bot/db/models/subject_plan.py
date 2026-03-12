@@ -10,6 +10,7 @@ from study_assistant_bot.db.base import Base
 from study_assistant_bot.enums import PlanLessonKind
 
 if TYPE_CHECKING:
+    from study_assistant_bot.db.models.lesson import Lesson
     from study_assistant_bot.db.models.subject import Subject
 
 
@@ -62,6 +63,7 @@ class SubjectPlanItem(Base):
     )
 
     subject: Mapped["Subject"] = relationship(back_populates="plan_items")
+    lessons: Mapped[list["Lesson"]] = relationship(back_populates="plan_item")
     questions: Mapped[list["PlanItemQuestion"]] = relationship(
         back_populates="plan_item",
         cascade="all, delete-orphan",

@@ -10,6 +10,7 @@ from study_assistant_bot.db.base import Base
 
 if TYPE_CHECKING:
     from study_assistant_bot.db.models.subject import Subject
+    from study_assistant_bot.db.models.subject_plan import SubjectPlanItem
 
 
 class Lesson(Base):
@@ -19,6 +20,10 @@ class Lesson(Base):
     subject_id: Mapped[int] = mapped_column(
         ForeignKey("subjects.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    subject_plan_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("subject_plan_items.id", ondelete="SET NULL"),
+        index=True,
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     starts_at: Mapped[datetime] = mapped_column(
@@ -42,3 +47,4 @@ class Lesson(Base):
     )
 
     subject: Mapped["Subject"] = relationship(back_populates="lessons")
+    plan_item: Mapped["SubjectPlanItem | None"] = relationship(back_populates="lessons")

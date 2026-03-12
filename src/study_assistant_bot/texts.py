@@ -4,10 +4,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from html import escape
-import re
 from typing import TYPE_CHECKING
 
 from study_assistant_bot.enums import MainMenuSection
+from study_assistant_bot.lesson_title_parser import (
+    humanize_lesson_details,
+    normalize_lesson_text,
+    parse_lesson_title,
+)
 
 if TYPE_CHECKING:
     from study_assistant_bot.db.models import Lesson
@@ -59,18 +63,6 @@ LESSON_NUMBER_BY_START_TIME = {
     "14:30": 5,
     "16:00": 6,
 }
-
-LESSON_TYPE_LABELS = {
-    "Сем": "Семінар",
-    "Пз": "ПЗ",
-    "Лк": "Лекція",
-    "Дод": "Додаткове заняття",
-}
-
-LESSON_TITLE_PATTERN = re.compile(r"^(?P<subject>.+?)\s*\[(?P<details>[^\]]+)\]\s*$")
-LESSON_DETAILS_PATTERN = re.compile(
-    r"^(?P<kind>\S+)(?:\s+т\.(?P<topic>\d+))?(?:/з\.(?P<session>\d+))?$"
-)
 
 SECTION_PLACEHOLDER_TEXTS = {
     MainMenuSection.SUBJECTS: (
@@ -249,14 +241,14 @@ def get_weekday_short_title(schedule_date: date) -> str:
 
 
 def _build_lesson_display_info(lesson: "Lesson") -> LessonDisplayInfo:
-    subject_label = _normalize_text(lesson.subject.name) if lesson.subject is not None else None
-    normalized_title = _normalize_text(lesson.title)
-    parsed_match = LESSON_TITLE_PATTERN.match(normalized_title)
+    subject_label = normalize_lesson_text(lesson.subject.name) if lesson.subject is not None else None
+    normalized_title = normalize_lesson_text(lesson.title)
+    parsed_title = parse_lesson_title(normalized_title)
     detail_label: str | None = None
 
-    if parsed_match is not None:
-        subject_from_title = _normalize_text(parsed_match.group("subject"))
-        detail_label = _humanize_lesson_details(parsed_match.group("details"))
+    if parsed_title is not None:
+        subject_from_title = parsed_title.subject_label
+        detail_label = humanize_lesson_details(parsed_title.details)
         subject_label = subject_label or subject_from_title
 
     if subject_label is None:
@@ -267,27 +259,8 @@ def _build_lesson_display_info(lesson: "Lesson") -> LessonDisplayInfo:
     return LessonDisplayInfo(subject_label=subject_label, detail_label=detail_label)
 
 
-def _humanize_lesson_details(details: str) -> str:
-    normalized_details = _normalize_text(details)
-    parsed_match = LESSON_DETAILS_PATTERN.match(normalized_details)
-    if parsed_match is None:
-        return normalized_details
-
-    parts = [LESSON_TYPE_LABELS.get(parsed_match.group("kind"), parsed_match.group("kind"))]
-    topic_number = parsed_match.group("topic")
-    session_number = parsed_match.group("session")
-
-    if topic_number is not None:
-        parts.append(f"Тема {topic_number}")
-
-    if session_number is not None:
-        parts.append(f"Заняття {session_number}")
-
-    return " · ".join(parts)
-
-
 def _normalize_text(value: str) -> str:
-    return " ".join(value.split())
+    return normalize_lesson_text(value)
 
 
 def _same_text(left: str, right: str) -> bool:

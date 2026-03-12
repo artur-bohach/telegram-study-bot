@@ -1,8 +1,9 @@
 PYTHON ?= python3.12
 TIMETABLE_PATH ?= data/group-time-table (1).xls
 SUBJECT_PLAN_DIR ?= data/subject_plans
+RELINK_SUBJECT_CODE ?=
 
-.PHONY: install run db-upgrade db-revision lint import-schedule import-subject-plans
+.PHONY: install run db-upgrade db-revision lint import-schedule import-subject-plans relink-lesson-plans
 
 install:
 	$(PYTHON) -m pip install -e .[dev]
@@ -24,3 +25,6 @@ import-schedule:
 
 import-subject-plans:
 	$(PYTHON) -m study_assistant_bot.scripts.import_subject_plans "$(SUBJECT_PLAN_DIR)"
+
+relink-lesson-plans:
+	$(PYTHON) -m study_assistant_bot.scripts.relink_lesson_plans $(if $(RELINK_SUBJECT_CODE),--subject-code "$(RELINK_SUBJECT_CODE)")

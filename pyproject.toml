@@ -27,6 +27,7 @@ dev = [
 study-assistant-bot = "study_assistant_bot.main:run"
 study-assistant-import-subject-plans = "study_assistant_bot.scripts.import_subject_plans:main"
 study-assistant-import-timetable = "study_assistant_bot.scripts.import_timetable:main"
+study-assistant-relink-lesson-plans = "study_assistant_bot.scripts.relink_lesson_plans:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/study_assistant_bot"]

@@ -148,6 +148,28 @@ make import-subject-plans SUBJECT_PLAN_DIR="data/my-subject-plans"
 - JSON вважається джерелом істини для планових занять, питань і практичних завдань;
 - за успішного імпорту для відповідного предмета видаляються застарілі записи, яких уже немає у файлі.
 
+## Relink занять з навчальним планом
+
+Після імпорту розкладу та навчальних планів можна окремо виконати звʼязування `Lesson`
+з `SubjectPlanItem`:
+
+```bash
+make relink-lesson-plans
+```
+
+Команда:
+
+- проходить усі заняття у стабільному порядку за `Lesson.id`;
+- звʼязує заняття лише за точним збігом `subject + lesson kind + topic_number + session_number`;
+- очищає існуючий link, якщо заняття більше не можна безпечно звʼязати;
+- не запускається автоматично під час імпорту розкладу або планів.
+
+Щоб виконати relink лише для одного предмета:
+
+```bash
+make relink-lesson-plans RELINK_SUBJECT_CODE="tax_law"
+```
+
 ## Environment Variables
 
 - `BOT_TOKEN`: Telegram bot token
