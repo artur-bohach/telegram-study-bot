@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 import re
 
@@ -35,7 +35,8 @@ class TimetableImportResult:
     created_subjects: int = 0
     created_lessons: int = 0
     updated_lessons: int = 0
-    skipped_lessons: int = 0
+    unchanged_lessons: int = 0
+    deleted_lessons: int = 0
 
 
 class TimetableImportService:
@@ -53,7 +54,16 @@ class TimetableImportService:
         subjects, created_subjects = await self._get_or_create_subjects(parsed_lessons)
         result.created_subjects = created_subjects
 
-        existing_lessons = await self._load_existing_lessons(parsed_lessons, subjects)
+        scoped_lessons = await self._load_scoped_existing_lessons(parsed_lessons, subjects)
+        existing_lessons = {
+            self._build_lesson_key(
+                subject_id=lesson.subject_id,
+                starts_at=lesson.starts_at,
+                ends_at=lesson.ends_at,
+            ): lesson
+            for lesson in scoped_lessons
+        }
+        imported_lesson_keys: set[tuple[int, datetime, datetime | None]] = set()
 
         for parsed_lesson in parsed_lessons:
             subject = subjects[parsed_lesson.subject_name]
@@ -62,6 +72,7 @@ class TimetableImportService:
                 starts_at=parsed_lesson.starts_at,
                 ends_at=parsed_lesson.ends_at,
             )
+            imported_lesson_keys.add(lesson_key)
             lesson = existing_lessons.get(lesson_key)
 
             if lesson is None:
@@ -81,7 +92,19 @@ class TimetableImportService:
             if self._update_existing_lesson(lesson, parsed_lesson):
                 result.updated_lessons += 1
             else:
-                result.skipped_lessons += 1
+                result.unchanged_lessons += 1
+
+        for lesson in scoped_lessons:
+            lesson_key = self._build_lesson_key(
+                subject_id=lesson.subject_id,
+                starts_at=lesson.starts_at,
+                ends_at=lesson.ends_at,
+            )
+            if lesson_key in imported_lesson_keys:
+                continue
+
+            await self._session.delete(lesson)
+            result.deleted_lessons += 1
 
         await self._session.flush()
         return result
@@ -134,33 +157,30 @@ class TimetableImportService:
         await self._session.flush()
         return subjects, created_subjects
 
-    async def _load_existing_lessons(
+    async def _load_scoped_existing_lessons(
         self,
         parsed_lessons: list[ParsedTimetableLesson],
         subjects: dict[str, Subject],
-    ) -> dict[tuple[int, datetime, datetime], Lesson]:
+    ) -> list[Lesson]:
+        imported_dates = {lesson.starts_at.date() for lesson in parsed_lessons}
         subject_ids = [subject.id for subject in subjects.values()]
-        starts_at_values = [lesson.starts_at for lesson in parsed_lessons]
-        ends_at_values = [lesson.ends_at for lesson in parsed_lessons]
+        min_imported_date = min(imported_dates)
+        max_imported_date = max(imported_dates)
+        scope_start = datetime.combine(min_imported_date, time.min)
+        scope_end = datetime.combine(max_imported_date + timedelta(days=1), time.min)
 
         result = await self._session.execute(
             select(Lesson).where(
                 Lesson.subject_id.in_(subject_ids),
-                Lesson.starts_at >= min(starts_at_values),
-                Lesson.ends_at <= max(ends_at_values),
+                Lesson.starts_at >= scope_start,
+                Lesson.starts_at < scope_end,
             )
         )
-        existing_lessons: dict[tuple[int, datetime, datetime], Lesson] = {}
-
-        for lesson in result.scalars():
-            lesson_key = self._build_lesson_key(
-                subject_id=lesson.subject_id,
-                starts_at=lesson.starts_at,
-                ends_at=lesson.ends_at,
-            )
-            existing_lessons[lesson_key] = lesson
-
-        return existing_lessons
+        return [
+            lesson
+            for lesson in result.scalars()
+            if lesson.starts_at.date() in imported_dates
+        ]
 
     def _parse_workbook(self, file_path: Path) -> list[ParsedTimetableLesson]:
         workbook = load_workbook(file_path)

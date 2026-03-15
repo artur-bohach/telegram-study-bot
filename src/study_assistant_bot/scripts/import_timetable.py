@@ -39,11 +39,12 @@ async def import_timetable(path: Path) -> str:
             [
                 "Імпорт розкладу завершено.",
                 f"Файл: {path}",
-                f"Знайдено занять: {result.parsed_lessons}",
+                f"Знайдено занять у файлі: {result.parsed_lessons}",
                 f"Створено предметів: {result.created_subjects}",
                 f"Створено занять: {result.created_lessons}",
                 f"Оновлено занять: {result.updated_lessons}",
-                f"Без змін: {result.skipped_lessons}",
+                f"Без змін: {result.unchanged_lessons}",
+                f"Видалено застарілих занять: {result.deleted_lessons}",
             ]
         )
     finally:
