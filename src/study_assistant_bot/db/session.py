@@ -61,7 +61,8 @@ async def verify_database_ready(engine: AsyncEngine) -> None:
     }
     required_columns = {
         "lessons": {"subject_plan_item_id"},
-        "subjects": {"short_name"},
+        "subject_plan_items": {"schedule_lesson_number"},
+        "subjects": {"short_name", "timetable_number_mode"},
     }
 
     async with engine.connect() as connection:

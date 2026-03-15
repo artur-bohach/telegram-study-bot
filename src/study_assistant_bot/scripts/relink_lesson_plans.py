@@ -15,7 +15,10 @@ from study_assistant_bot.services import (
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Повторне звʼязування занять з елементами навчального плану.",
+        description=(
+            "Повторне звʼязування занять з елементами навчального плану "
+            "за структурованими позначками розкладу."
+        ),
     )
     parser.add_argument(
         "--subject-code",
@@ -54,6 +57,7 @@ def format_summary(summary: LessonPlanRelinkSummary) -> str:
             f"Очищено звʼязків: {summary.cleared_lessons}",
             f"Без змін: {summary.unchanged_lessons}",
             f"Не вдалося розпарсити: {summary.parse_failures}",
+            f"Без `timetable_number_mode`: {summary.missing_mode_cases}",
             f"Без збігу в плані: {summary.no_match_cases}",
             f"Неоднозначних збігів: {summary.ambiguous_match_cases}",
         ]

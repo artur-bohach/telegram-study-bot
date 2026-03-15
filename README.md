@@ -148,6 +148,10 @@ make import-subject-plans SUBJECT_PLAN_DIR="data/my-subject-plans"
 - `Subject` має вже існувати в базі після попереднього кроку імпорту розкладу;
 - під час успішного імпорту повна назва предмета оновлюється в `Subject.name`, а коротка
   назва з JSON зберігається в `Subject.short_name`;
+- якщо JSON `subject` містить `timetable_number_mode`, значення зберігається в
+  `Subject.timetable_number_mode`;
+- поле `schedule_lesson_number` з JSON, якщо воно є, зберігається в
+  `SubjectPlanItem.schedule_lesson_number` без автоматичного заповнення або виведення;
 - повторний запуск не створює дублікати;
 - JSON вважається джерелом істини для планових занять, питань і практичних завдань;
 - за успішного імпорту для відповідного предмета видаляються застарілі записи, яких уже немає у файлі.
@@ -164,7 +168,10 @@ make relink-lesson-plans
 Команда:
 
 - проходить усі заняття у стабільному порядку за `Lesson.id`;
-- звʼязує заняття лише за точним збігом `subject + lesson kind + topic_number + session_number`;
+- читає `Subject.timetable_number_mode` перед точним matching;
+- для `session` трактує `з.N` як `session_number`;
+- для `schedule` трактує `з.N` як `schedule_lesson_number`;
+- якщо `Subject.timetable_number_mode` не задано, залишає заняття unlinked замість guess-мatching;
 - очищає існуючий link, якщо заняття більше не можна безпечно звʼязати;
 - не запускається автоматично під час імпорту розкладу або планів.
 
@@ -173,6 +180,27 @@ make relink-lesson-plans
 ```bash
 make relink-lesson-plans RELINK_SUBJECT_CODE="tax_law"
 ```
+
+## Anchor-link для розріджених предметів
+
+Для предметів із розкладними позначками на кшталт `Крим проц [Пз]`, де strict relink не має
+достатньо даних, можна вручну запустити forward-link від однієї anchor-пари:
+
+```bash
+make anchor-link-lesson-plans \
+  ANCHOR_SUBJECT_CODE="tax_law" \
+  ANCHOR_LESSON_ID="123" \
+  ANCHOR_PLAN_ITEM_ID="456"
+```
+
+Команда:
+
+- працює лише в межах одного `Subject`;
+- бере всі майбутні заняття предмета в порядку `starts_at`, потім `id`;
+- будує одну спільну послідовність лише для `seminar` і `practical`;
+- не чіпає лекції та попередні заняття;
+- оновлює лише link-и від заданого anchor вперед;
+- зупиняє послідовне звʼязування, коли закінчуються відповідні `SubjectPlanItem`.
 
 ## Environment Variables
 
@@ -187,5 +215,7 @@ make relink-lesson-plans RELINK_SUBJECT_CODE="tax_law"
 - The bot expects database migrations to be applied before startup.
 - `Subject.name` зберігає повну офіційну назву предмета.
 - `Subject.short_name` зберігає коротку назву для розкладу та компактного відображення.
+- `Subject.timetable_number_mode` визначає, як strict relink трактує `з.N` у назві заняття:
+  як `session_number` або як `schedule_lesson_number`.
 - `Subject` and `Lesson` are modeled as shared study data, not user-owned data.
 - Future features should be added behind the existing service and handler boundaries rather than inside the entrypoint.

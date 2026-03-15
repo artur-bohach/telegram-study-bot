@@ -31,6 +31,13 @@ class SubjectPlanItem(Base):
             "topic_number",
             "session_number",
         ),
+        Index(
+            "ix_subject_plan_items_schedule_lookup",
+            "subject_id",
+            "lesson_kind",
+            "topic_number",
+            "schedule_lesson_number",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -49,6 +56,7 @@ class SubjectPlanItem(Base):
     )
     topic_number: Mapped[int] = mapped_column(Integer, nullable=False)
     session_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    schedule_lesson_number: Mapped[int | None] = mapped_column(Integer)
     topic_title: Mapped[str] = mapped_column(Text(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

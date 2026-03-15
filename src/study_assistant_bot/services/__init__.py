@@ -1,4 +1,7 @@
 from study_assistant_bot.services.lesson_plan_linking import (
+    LessonPlanAnchorLinkError,
+    LessonPlanAnchorLinkService,
+    LessonPlanAnchorLinkSummary,
     LessonPlanRelinkError,
     LessonPlanRelinkService,
     LessonPlanRelinkSummary,
@@ -16,6 +19,9 @@ from study_assistant_bot.services.timetable_import import (
 from study_assistant_bot.services.user_service import UserService
 
 __all__ = [
+    "LessonPlanAnchorLinkError",
+    "LessonPlanAnchorLinkService",
+    "LessonPlanAnchorLinkSummary",
     "LessonPlanRelinkError",
     "LessonPlanRelinkService",
     "LessonPlanRelinkSummary",

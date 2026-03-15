@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from study_assistant_bot.db.models import Lesson
+from study_assistant_bot.db.models import Lesson, SubjectPlanItem
 
 
 class ScheduleService:
@@ -17,7 +17,10 @@ class ScheduleService:
         day_start, next_day_start = self._build_day_bounds(schedule_date)
         result = await self._session.execute(
             select(Lesson)
-            .options(selectinload(Lesson.subject))
+            .options(
+                selectinload(Lesson.subject),
+                selectinload(Lesson.plan_item),
+            )
             .where(
                 Lesson.starts_at >= day_start,
                 Lesson.starts_at < next_day_start,
@@ -33,7 +36,10 @@ class ScheduleService:
 
         result = await self._session.execute(
             select(Lesson)
-            .options(selectinload(Lesson.subject))
+            .options(
+                selectinload(Lesson.subject),
+                selectinload(Lesson.plan_item),
+            )
             .where(
                 Lesson.starts_at >= week_start_at,
                 Lesson.starts_at < week_end_at,
@@ -47,7 +53,10 @@ class ScheduleService:
             select(Lesson)
             .options(
                 selectinload(Lesson.subject),
-                selectinload(Lesson.plan_item),
+                selectinload(Lesson.plan_item).options(
+                    selectinload(SubjectPlanItem.questions),
+                    selectinload(SubjectPlanItem.assignments),
+                ),
             )
             .where(Lesson.id == lesson_id)
         )

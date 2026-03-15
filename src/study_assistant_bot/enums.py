@@ -12,6 +12,11 @@ class PlanLessonKind(StrEnum):
     PRACTICAL = "practical"
 
 
+class SubjectTimetableNumberMode(StrEnum):
+    SESSION = "session"
+    SCHEDULE = "schedule"
+
+
 class MainMenuSection(StrEnum):
     SCHEDULE = "Schedule"
     SUBJECTS = "Subjects"

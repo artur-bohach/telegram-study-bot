@@ -8,23 +8,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from study_assistant_bot.bot.keyboards import (
     LessonActionCallback,
+    LessonContentCallback,
     LessonDetailsCallback,
     WeekDayCallback,
     build_day_schedule_keyboard,
+    build_lesson_content_keyboard,
     build_lesson_details_keyboard,
     build_main_menu,
     build_schedule_menu,
     build_week_picker_keyboard,
 )
-from study_assistant_bot.enums import MainMenuSection, ScheduleMenuAction
+from study_assistant_bot.enums import MainMenuSection, PlanLessonKind, ScheduleMenuAction
+from study_assistant_bot.lesson_title_parser import resolve_lesson_kind
 from study_assistant_bot.services import ScheduleService
 from study_assistant_bot.texts import (
+    LECTURE_DETAILS_UNAVAILABLE_TEXT,
     LESSON_NOT_FOUND_TEXT,
     SCHEDULE_BACK_TEXT,
     SCHEDULE_MENU_TEXT,
     build_lesson_action_placeholder_text,
     build_lesson_details_text,
+    build_practical_assignments_text,
     build_selected_day_schedule_text,
+    build_seminar_questions_text,
     build_today_schedule_text,
     build_tomorrow_schedule_text,
     build_week_schedule_text,
@@ -108,10 +114,15 @@ async def open_lesson_details(
         return
 
     context_date = date.fromisoformat(callback_data.context_date)
+    lesson_kind = resolve_lesson_kind(lesson)
+    if lesson_kind is PlanLessonKind.LECTURE:
+        await callback.answer(LECTURE_DETAILS_UNAVAILABLE_TEXT, show_alert=False)
+        return
+
     await callback.message.edit_text(
         build_lesson_details_text(lesson),
         reply_markup=build_lesson_details_keyboard(
-            lesson_id=lesson.id,
+            lesson=lesson,
             context=callback_data.context,
             context_date=context_date,
         ),
@@ -168,6 +179,55 @@ async def handle_lesson_action_placeholder(
         build_lesson_action_placeholder_text(callback_data.action),
         show_alert=False,
     )
+
+
+@router.callback_query(LessonContentCallback.filter())
+async def open_lesson_content(
+    callback: CallbackQuery,
+    callback_data: LessonContentCallback,
+    session: AsyncSession,
+) -> None:
+    if callback.message is None:
+        await callback.answer(LESSON_NOT_FOUND_TEXT, show_alert=True)
+        return
+
+    schedule_service = ScheduleService(session)
+    lesson = await schedule_service.get_lesson_by_id(callback_data.lesson_id)
+    if lesson is None:
+        await callback.answer(LESSON_NOT_FOUND_TEXT, show_alert=True)
+        return
+
+    lesson_kind = resolve_lesson_kind(lesson)
+    if callback_data.kind == "questions":
+        if lesson_kind is not PlanLessonKind.SEMINAR:
+            await callback.answer(
+                build_lesson_action_placeholder_text("questions"),
+                show_alert=False,
+            )
+            return
+        text = build_seminar_questions_text(lesson)
+    elif callback_data.kind == "assignments":
+        if lesson_kind is not PlanLessonKind.PRACTICAL:
+            await callback.answer(
+                build_lesson_action_placeholder_text("task"),
+                show_alert=False,
+            )
+            return
+        text = build_practical_assignments_text(lesson)
+    else:
+        await callback.answer(LESSON_NOT_FOUND_TEXT, show_alert=True)
+        return
+
+    context_date = date.fromisoformat(callback_data.context_date)
+    await callback.message.edit_text(
+        text,
+        reply_markup=build_lesson_content_keyboard(
+            lesson_id=lesson.id,
+            context=callback_data.context,
+            context_date=context_date,
+        ),
+    )
+    await callback.answer()
 
 
 async def _send_day_schedule_message(

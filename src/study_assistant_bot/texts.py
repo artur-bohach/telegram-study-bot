@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from html import escape
+import re
 from typing import TYPE_CHECKING
 
 from study_assistant_bot.enums import MainMenuSection, PlanLessonKind
@@ -11,6 +12,7 @@ from study_assistant_bot.lesson_title_parser import (
     humanize_lesson_details,
     normalize_lesson_text,
     parse_lesson_title,
+    resolve_lesson_kind,
 )
 
 if TYPE_CHECKING:
@@ -34,6 +36,7 @@ UNKNOWN_MESSAGE_TEXT = (
 SCHEDULE_MENU_TEXT = "Оберіть, який розклад показати."
 SCHEDULE_BACK_TEXT = "Головне меню."
 LESSON_NOT_FOUND_TEXT = "Не вдалося знайти це заняття."
+LECTURE_DETAILS_UNAVAILABLE_TEXT = "Для лекцій окрема картка заняття поки що не відкривається."
 
 WEEKDAY_TITLES = {
     0: "Понеділок",
@@ -69,6 +72,7 @@ PLAN_LESSON_KIND_LABELS = {
     PlanLessonKind.SEMINAR: "Семінар",
     PlanLessonKind.PRACTICAL: "ПЗ",
 }
+LEADING_LIST_MARKER_PATTERN = re.compile(r"^\d+[\.\)]\s*")
 
 SECTION_PLACEHOLDER_TEXTS = {
     MainMenuSection.SUBJECTS: (
@@ -246,6 +250,76 @@ def build_lesson_action_placeholder_text(action: str) -> str:
     return action_texts[action]
 
 
+def build_seminar_questions_text(lesson: "Lesson") -> str:
+    details = _build_lesson_details_info(lesson)
+    lines = _build_lesson_content_header(
+        title="Питання до семінару",
+        details=details,
+    )
+    questions = list(getattr(getattr(lesson, "plan_item", None), "questions", []))
+
+    if resolve_lesson_kind(lesson) is not PlanLessonKind.SEMINAR:
+        lines.append("Питання для цього заняття зараз недоступні.")
+        return "\n".join(lines)
+
+    if getattr(lesson, "plan_item", None) is None:
+        lines.append("Питання до цього семінару ще не привʼязані до заняття.")
+        return "\n".join(lines)
+
+    if not questions:
+        lines.append("Питання до цього семінару ще не додані.")
+        return "\n".join(lines)
+
+    question_lines: list[str] = []
+    for index, question in enumerate(questions, start=1):
+        question_text = _normalize_optional_text(getattr(question, "text", None))
+        if question_text is None:
+            continue
+
+        question_lines.append(f"{index}. {escape(_strip_leading_list_marker(question_text))}")
+
+    if not question_lines:
+        lines.append("Питання до цього семінару ще не додані.")
+        return "\n".join(lines)
+
+    lines.extend(question_lines)
+    return "\n".join(lines)
+
+
+def build_practical_assignments_text(lesson: "Lesson") -> str:
+    details = _build_lesson_details_info(lesson)
+    lines = _build_lesson_content_header(
+        title="Практичні завдання",
+        details=details,
+    )
+    assignments = list(getattr(getattr(lesson, "plan_item", None), "assignments", []))
+
+    if resolve_lesson_kind(lesson) is not PlanLessonKind.PRACTICAL:
+        lines.append("Практичні завдання для цього заняття зараз недоступні.")
+        return "\n".join(lines)
+
+    if getattr(lesson, "plan_item", None) is None:
+        lines.append("Практичні завдання до цього заняття ще не привʼязані.")
+        return "\n".join(lines)
+
+    if not assignments:
+        lines.append("Практичні завдання до цього заняття ще не додані.")
+        return "\n".join(lines)
+
+    blocks: list[str] = []
+    for index, assignment in enumerate(assignments, start=1):
+        assignment_block = _build_assignment_block(assignment, fallback_index=index)
+        if assignment_block is not None:
+            blocks.append(assignment_block)
+
+    if not blocks:
+        lines.append("Практичні завдання до цього заняття ще не додані.")
+        return "\n".join(lines)
+
+    lines.append("\n\n".join(blocks))
+    return "\n".join(lines)
+
+
 def get_lesson_number(lesson: "Lesson") -> int | None:
     return LESSON_NUMBER_BY_START_TIME.get(lesson.starts_at.strftime("%H:%M"))
 
@@ -271,6 +345,22 @@ def _build_lesson_details_info(lesson: "Lesson") -> LessonDetailsInfo:
         metadata_label=metadata_label,
         topic_label=topic_label,
     )
+
+
+def _build_lesson_content_header(
+    title: str,
+    details: LessonDetailsInfo,
+) -> list[str]:
+    lines = [f"<b>{title}</b>", f"<b>{escape(details.subject_label)}</b>"]
+
+    if details.metadata_label:
+        lines.append(f"<i>{escape(details.metadata_label)}</i>")
+
+    if details.topic_label:
+        lines.append(escape(details.topic_label))
+
+    lines.append("")
+    return lines
 
 
 def _build_lesson_display_info(
@@ -337,6 +427,31 @@ def _build_plan_item_presentation(plan_item: object) -> tuple[str | None, str | 
         return metadata_label, None
 
     return metadata_label, f"Тема: {topic_title}"
+
+
+def _build_assignment_block(assignment: object, fallback_index: int) -> str | None:
+    title = _normalize_optional_text(getattr(assignment, "title", None))
+    if title is None:
+        return None
+
+    task_number = _coerce_positive_int(getattr(assignment, "task_number", None)) or fallback_index
+    condition = _normalize_optional_text(getattr(assignment, "condition", None))
+    question = _normalize_optional_text(getattr(assignment, "question", None))
+
+    lines = [f"<b>Завдання {task_number}. {escape(title)}</b>"]
+
+    if condition:
+        lines.append(f"Умова: {escape(condition)}")
+
+    if question:
+        lines.append(f"Питання: {escape(question)}")
+
+    return "\n".join(lines)
+
+
+def _strip_leading_list_marker(value: str) -> str:
+    stripped_value = LEADING_LIST_MARKER_PATTERN.sub("", value, count=1)
+    return stripped_value or value
 
 
 def _coerce_plan_lesson_kind(value: object) -> PlanLessonKind | None:

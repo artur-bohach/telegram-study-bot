@@ -15,7 +15,7 @@ from study_assistant_bot.db.models import (
     Subject,
     SubjectPlanItem,
 )
-from study_assistant_bot.enums import PlanLessonKind
+from study_assistant_bot.enums import PlanLessonKind, SubjectTimetableNumberMode
 
 
 class SubjectPlanImportError(Exception):
@@ -39,6 +39,8 @@ class ValidatedSubjectReference:
     name: str
     short_name: str
     code: str
+    timetable_number_mode: SubjectTimetableNumberMode | None
+    timetable_number_mode_provided: bool = False
 
 
 @dataclass(slots=True)
@@ -54,6 +56,7 @@ class ValidatedPlanItem:
     lesson_kind: PlanLessonKind
     topic_number: int
     session_number: int
+    schedule_lesson_number: int | None
     topic_title: str
     questions: list[str]
     assignments: list[ValidatedPlanItemAssignment]
@@ -188,6 +191,11 @@ class SubjectPlanImportService:
             name=self._require_text(raw_subject.get("name"), "subject.name"),
             short_name=self._require_text(raw_subject.get("short_name"), "subject.short_name"),
             code=self._require_text(raw_subject.get("code"), "subject.code"),
+            timetable_number_mode=self._parse_optional_timetable_number_mode(
+                raw_subject.get("timetable_number_mode"),
+                field_name="subject.timetable_number_mode",
+            ),
+            timetable_number_mode_provided="timetable_number_mode" in raw_subject,
         )
 
         raw_plan_items = raw_data.get("plan_items")
@@ -234,6 +242,10 @@ class SubjectPlanImportService:
             raw_item.get("session_number"),
             field_name=f"plan_items[{index}].session_number",
         )
+        schedule_lesson_number = self._parse_optional_positive_int(
+            raw_item.get("schedule_lesson_number"),
+            field_name=f"plan_items[{index}].schedule_lesson_number",
+        )
         topic_title = self._require_text(
             raw_item.get("topic_title"),
             field_name=f"plan_items[{index}].topic_title",
@@ -277,6 +289,7 @@ class SubjectPlanImportService:
             lesson_kind=lesson_kind,
             topic_number=topic_number,
             session_number=session_number,
+            schedule_lesson_number=schedule_lesson_number,
             topic_title=topic_title,
             questions=questions,
             assignments=assignments,
@@ -495,6 +508,8 @@ class SubjectPlanImportService:
         )
         subject.name = subject_reference.name
         subject.short_name = subject_reference.short_name
+        if subject_reference.timetable_number_mode_provided:
+            subject.timetable_number_mode = subject_reference.timetable_number_mode
 
         return ResolvedSubject(
             subject=subject,
@@ -575,14 +590,25 @@ class SubjectPlanImportService:
                     lesson_kind=validated_item.lesson_kind,
                     topic_number=validated_item.topic_number,
                     session_number=validated_item.session_number,
+                    schedule_lesson_number=validated_item.schedule_lesson_number,
                     topic_title=validated_item.topic_title,
                 )
                 session.add(plan_item)
                 existing_by_key[item_key] = plan_item
                 stats.created_plan_items += 1
-            elif plan_item.topic_title != validated_item.topic_title:
-                plan_item.topic_title = validated_item.topic_title
-                stats.updated_plan_items += 1
+            else:
+                changed = False
+
+                if plan_item.schedule_lesson_number != validated_item.schedule_lesson_number:
+                    plan_item.schedule_lesson_number = validated_item.schedule_lesson_number
+                    changed = True
+
+                if plan_item.topic_title != validated_item.topic_title:
+                    plan_item.topic_title = validated_item.topic_title
+                    changed = True
+
+                if changed:
+                    stats.updated_plan_items += 1
 
             await self._sync_questions(
                 session=session,
@@ -738,6 +764,30 @@ class SubjectPlanImportService:
             )
 
         return parsed_value
+
+    @staticmethod
+    def _parse_optional_positive_int(value: Any, field_name: str) -> int | None:
+        if value in (None, ""):
+            return None
+
+        return SubjectPlanImportService._parse_positive_int(value, field_name)
+
+    @staticmethod
+    def _parse_optional_timetable_number_mode(
+        value: Any,
+        field_name: str,
+    ) -> SubjectTimetableNumberMode | None:
+        if value is None:
+            return None
+
+        normalized_value = SubjectPlanImportService._require_text(value, field_name)
+
+        try:
+            return SubjectTimetableNumberMode(normalized_value)
+        except ValueError as exc:
+            raise SubjectPlanValidationError(
+                f"Поле `{field_name}` має бути одним із: session, schedule."
+            ) from exc
 
     @staticmethod
     def _require_text(value: Any, field_name: str) -> str:

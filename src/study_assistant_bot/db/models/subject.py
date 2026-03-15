@@ -3,10 +3,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, String, Text, text
+from sqlalchemy import Boolean, DateTime, Enum, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from study_assistant_bot.db.base import Base
+from study_assistant_bot.enums import SubjectTimetableNumberMode
 
 if TYPE_CHECKING:
     from study_assistant_bot.db.models.lesson import Lesson
@@ -20,6 +21,14 @@ class Subject(Base):
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     short_name: Mapped[str | None] = mapped_column(String(255), unique=True)
     code: Mapped[str | None] = mapped_column(String(50))
+    timetable_number_mode: Mapped[SubjectTimetableNumberMode | None] = mapped_column(
+        Enum(
+            SubjectTimetableNumberMode,
+            values_callable=lambda enum_class: [item.value for item in enum_class],
+            native_enum=False,
+            length=20,
+        )
+    )
     description: Mapped[str | None] = mapped_column(Text())
     is_active: Mapped[bool] = mapped_column(
         Boolean,
